@@ -116,17 +116,36 @@ If you have a university subscription, you can download papers from IEEE, ACM, E
 
 ### Two Options
 
-**Option A: VPN Mode (Simplest)**
+**Option A: VPN Mode with Script**
 
-If you're connected to your university's VPN:
+If your university provides VPN access, create a script that connects to it:
+
+```bash
+# Example: scripts/vpn-connect.sh
+#!/bin/bash
+# Your VPN connection command here
+# Examples:
+# openconnect vpn.youruni.edu
+# sudo openvpn --config ~/vpn/university.ovpn
+# nmcli connection up "University VPN"
+```
+
+Then configure it:
 
 ```yaml
 institutional:
   enabled: true
   vpn_enabled: true
+  vpn_script: "./scripts/vpn-connect.sh"
+  vpn_disconnect_script: "./scripts/vpn-disconnect.sh"  # optional
 ```
 
-That's it. Papers will download directly.
+Run authentication to connect:
+```bash
+paper-retriever auth
+```
+
+This runs your VPN script. Once connected, papers download directly.
 
 **Option B: EZProxy Mode (No VPN needed)**
 

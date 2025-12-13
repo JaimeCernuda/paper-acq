@@ -18,14 +18,21 @@ api_keys:
 # Institutional Access (for IEEE, ACM, Elsevier via your university)
 #
 # Two modes available:
-#   1. VPN mode: Connect to university VPN, set vpn_enabled: true
+#   1. VPN mode: Set vpn_enabled: true and vpn_script to your connection script
 #   2. EZProxy mode: Set proxy_url, then run 'paper-retriever auth' to login
 #
 institutional:
   enabled: false
-  vpn_enabled: false  # Set true if connected to university VPN
-  proxy_url: null     # e.g., "https://ezproxy.gl.iit.edu/login?url="
-  cookies_file: ".institutional_cookies.pkl"  # Where to save auth session
+
+  # VPN Mode - runs a script to connect to your university VPN
+  vpn_enabled: false
+  vpn_script: null              # e.g., "./scripts/vpn-connect.sh"
+  vpn_disconnect_script: null   # e.g., "./scripts/vpn-disconnect.sh" (optional)
+
+  # EZProxy Mode - browser-based Shibboleth/SAML login
+  proxy_url: null               # e.g., "https://ezproxy.gl.iit.edu/login?url="
+  cookies_file: ".institutional_cookies.pkl"
+
   university: "Your University"  # For reference only
 
 # Source configuration (lower priority number = tried first)

@@ -78,6 +78,7 @@ class PaperRetriever:
             clients["institutional"] = InstitutionalAccessClient(
                 proxy_url=inst_config.get("proxy_url"),
                 vpn_enabled=inst_config.get("vpn_enabled", False),
+                vpn_script=inst_config.get("vpn_script"),
                 cookies_file=inst_config.get("cookies_file", ".institutional_cookies.pkl"),
                 download_dir=self.config.download.get("output_dir", "./downloads"),
             )

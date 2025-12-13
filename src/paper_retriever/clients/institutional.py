@@ -2,6 +2,7 @@
 
 import pickle
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ class InstitutionalAccessClient:
         self,
         proxy_url: str | None = None,
         vpn_enabled: bool = False,
+        vpn_script: str | None = None,
         cookies_file: str = ".institutional_cookies.pkl",
         download_dir: str = "./downloads",
     ):
@@ -29,15 +31,18 @@ class InstitutionalAccessClient:
         Args:
             proxy_url: EZProxy URL (e.g., "https://ezproxy.gl.iit.edu/login?url=")
             vpn_enabled: If True, assume VPN is connected and use direct access
+            vpn_script: Path to script that connects to VPN (run during auth)
             cookies_file: Path to save/load authentication cookies
             download_dir: Directory to save downloaded PDFs
         """
         self.proxy_url = proxy_url
         self.vpn_enabled = vpn_enabled
+        self.vpn_script = vpn_script
         self.cookies_file = Path(cookies_file)
         self.download_dir = Path(download_dir)
         self._cookies: dict[str, str] = {}
         self._authenticated = False
+        self._vpn_connected = False
 
     def get_proxied_url(self, url: str) -> str:
         """Convert a URL to a proxied URL.
@@ -89,6 +94,79 @@ class InstitutionalAccessClient:
         """Save authentication cookies for reuse."""
         with open(self.cookies_file, "wb") as f:
             pickle.dump(self._cookies, f)
+
+    def connect_vpn(self) -> bool:
+        """Run the VPN connection script.
+
+        Returns:
+            True if VPN connected successfully (or no script configured)
+        """
+        if not self.vpn_script:
+            print("No VPN script configured.")
+            return False
+
+        script_path = Path(self.vpn_script)
+        if not script_path.exists():
+            print(f"VPN script not found: {self.vpn_script}")
+            return False
+
+        print(f"\nRunning VPN script: {self.vpn_script}")
+        print("=" * 60)
+
+        try:
+            # Run the script
+            result = subprocess.run(
+                [str(script_path)],
+                shell=True,
+                capture_output=False,  # Let output go to terminal for interactive scripts
+                text=True,
+            )
+
+            if result.returncode == 0:
+                print("=" * 60)
+                print("VPN script completed successfully.")
+                self._vpn_connected = True
+                self._authenticated = True
+                return True
+            else:
+                print("=" * 60)
+                print(f"VPN script failed with exit code: {result.returncode}")
+                return False
+
+        except Exception as e:
+            print(f"Error running VPN script: {e}")
+            return False
+
+    def disconnect_vpn(self, disconnect_script: str | None = None) -> bool:
+        """Run a VPN disconnect script if provided.
+
+        Args:
+            disconnect_script: Path to disconnect script (optional)
+
+        Returns:
+            True if disconnect was successful
+        """
+        if not disconnect_script:
+            self._vpn_connected = False
+            return True
+
+        script_path = Path(disconnect_script)
+        if not script_path.exists():
+            print(f"Disconnect script not found: {disconnect_script}")
+            return False
+
+        try:
+            result = subprocess.run(
+                [str(script_path)],
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            self._vpn_connected = False
+            return result.returncode == 0
+        except Exception as e:
+            print(f"Error running disconnect script: {e}")
+            return False
 
     def authenticate_interactive(self) -> bool:
         """Authenticate interactively using Selenium.

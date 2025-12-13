@@ -140,3 +140,85 @@ class TestInstitutionalAccessClient:
 
         assert url is not None
         assert "paper.pdf" in url
+
+    def test_init_with_vpn_script(self):
+        """Test client initialization with VPN script."""
+        client = InstitutionalAccessClient(
+            vpn_enabled=True,
+            vpn_script="/path/to/vpn-connect.sh",
+        )
+        assert client.vpn_enabled is True
+        assert client.vpn_script == "/path/to/vpn-connect.sh"
+
+    def test_connect_vpn_no_script(self):
+        """Test VPN connection without script returns False."""
+        client = InstitutionalAccessClient(vpn_enabled=True)
+        result = client.connect_vpn()
+        assert result is False
+
+    def test_connect_vpn_missing_script(self):
+        """Test VPN connection with missing script returns False."""
+        client = InstitutionalAccessClient(
+            vpn_enabled=True,
+            vpn_script="/nonexistent/script.sh",
+        )
+        result = client.connect_vpn()
+        assert result is False
+
+    def test_connect_vpn_with_script(self):
+        """Test VPN connection with working script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a simple script that exits successfully
+            script_path = Path(tmpdir) / "vpn-connect.sh"
+            script_path.write_text("#!/bin/bash\nexit 0\n")
+            script_path.chmod(0o755)
+
+            client = InstitutionalAccessClient(
+                vpn_enabled=True,
+                vpn_script=str(script_path),
+            )
+            result = client.connect_vpn()
+
+            assert result is True
+            assert client._vpn_connected is True
+            assert client.is_authenticated() is True
+
+    def test_connect_vpn_with_failing_script(self):
+        """Test VPN connection with failing script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a script that fails
+            script_path = Path(tmpdir) / "vpn-connect.sh"
+            script_path.write_text("#!/bin/bash\nexit 1\n")
+            script_path.chmod(0o755)
+
+            client = InstitutionalAccessClient(
+                vpn_enabled=True,
+                vpn_script=str(script_path),
+            )
+            result = client.connect_vpn()
+
+            assert result is False
+            assert client._vpn_connected is False
+
+    def test_disconnect_vpn_no_script(self):
+        """Test VPN disconnect without script."""
+        client = InstitutionalAccessClient(vpn_enabled=True)
+        client._vpn_connected = True
+        result = client.disconnect_vpn()
+
+        assert result is True
+        assert client._vpn_connected is False
+
+    def test_disconnect_vpn_with_script(self):
+        """Test VPN disconnect with script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            script_path = Path(tmpdir) / "vpn-disconnect.sh"
+            script_path.write_text("#!/bin/bash\nexit 0\n")
+            script_path.chmod(0o755)
+
+            client = InstitutionalAccessClient(vpn_enabled=True)
+            client._vpn_connected = True
+            result = client.disconnect_vpn(disconnect_script=str(script_path))
+
+            assert result is True
+            assert client._vpn_connected is False

@@ -115,6 +115,8 @@ class Config:
         default_institutional = {
             "enabled": False,
             "vpn_enabled": False,
+            "vpn_script": None,  # Script to run for VPN connection
+            "vpn_disconnect_script": None,  # Script to run for VPN disconnect
             "proxy_url": None,  # e.g., "https://ezproxy.gl.iit.edu/login?url="
             "cookies_file": ".institutional_cookies.pkl",
             "university": None,

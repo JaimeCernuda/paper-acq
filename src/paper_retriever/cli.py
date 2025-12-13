@@ -299,8 +299,19 @@ def sources(ctx: click.Context) -> None:
     if inst.get("enabled"):
         click.echo("Institutional access:")
         if inst.get("vpn_enabled"):
-            click.echo(click.style("  VPN mode: enabled", fg="green"))
+            click.echo(click.style("  Mode: VPN", fg="green"))
+            vpn_script = inst.get("vpn_script")
+            if vpn_script:
+                script_exists = Path(vpn_script).exists()
+                if script_exists:
+                    click.echo(f"  VPN script: {vpn_script}")
+                else:
+                    click.echo(click.style(f"  VPN script: {vpn_script} (not found)", fg="red"))
+            else:
+                click.echo(click.style("  VPN script: not configured", fg="yellow"))
+                click.echo("  Add vpn_script to config.yaml")
         elif inst.get("proxy_url"):
+            click.echo("  Mode: EZProxy")
             click.echo(f"  Proxy URL: {inst.get('proxy_url')}")
             cookies_file = Path(inst.get("cookies_file", ".institutional_cookies.pkl"))
             if cookies_file.exists():
@@ -315,15 +326,13 @@ def sources(ctx: click.Context) -> None:
 def auth(ctx: click.Context) -> None:
     """Authenticate with your institution for access to IEEE, ACM, etc.
 
-    This opens a browser window where you can log in through your
-    institution's authentication system (Shibboleth/SAML). Your session
-    will be saved for future use.
+    Two authentication modes are supported:
 
-    Before running this command, configure institutional access in config.yaml:
+    1. VPN Mode: Runs your VPN connection script
+       Configure with vpn_enabled: true and vpn_script: "/path/to/script.sh"
 
-        institutional:
-          enabled: true
-          proxy_url: "https://ezproxy.your-university.edu/login?url="
+    2. EZProxy Mode: Opens browser for Shibboleth/SAML login
+       Configure with proxy_url: "https://ezproxy.your-university.edu/login?url="
 
     Example:
 
@@ -338,25 +347,54 @@ def auth(ctx: click.Context) -> None:
         click.echo()
         click.echo("  institutional:")
         click.echo("    enabled: true")
+        click.echo("    # For VPN mode:")
+        click.echo('    vpn_enabled: true')
+        click.echo('    vpn_script: "/path/to/vpn-connect.sh"')
+        click.echo("    # OR for EZProxy mode:")
         click.echo('    proxy_url: "https://ezproxy.your-university.edu/login?url="')
-        return
-
-    if config.institutional.get("vpn_enabled"):
-        click.echo(click.style("Note: ", fg="yellow") + "VPN mode is enabled")
-        click.echo("When connected to your institution's VPN, no additional auth is needed.")
-        return
-
-    if not config.institutional.get("proxy_url"):
-        click.echo(click.style("Error: ", fg="red") + "No proxy_url configured")
-        click.echo("Set your institution's EZProxy URL in config.yaml")
         return
 
     from paper_retriever.clients.institutional import InstitutionalAccessClient
 
+    inst = config.institutional
+
+    # VPN mode with script
+    if inst.get("vpn_enabled"):
+        vpn_script = inst.get("vpn_script")
+        if not vpn_script:
+            click.echo(click.style("Error: ", fg="red") + "VPN mode enabled but no vpn_script configured")
+            click.echo()
+            click.echo("Add the VPN connection script to config.yaml:")
+            click.echo()
+            click.echo("  institutional:")
+            click.echo("    enabled: true")
+            click.echo("    vpn_enabled: true")
+            click.echo('    vpn_script: "/path/to/vpn-connect.sh"')
+            return
+
+        client = InstitutionalAccessClient(
+            vpn_enabled=True,
+            vpn_script=vpn_script,
+        )
+
+        success = client.connect_vpn()
+        if success:
+            click.echo()
+            click.echo(click.style("Success! ", fg="green") + "VPN connected. You can now download papers.")
+        else:
+            click.echo(click.style("VPN connection failed.", fg="red"))
+        return
+
+    # EZProxy mode
+    if not inst.get("proxy_url"):
+        click.echo(click.style("Error: ", fg="red") + "No proxy_url or vpn_script configured")
+        click.echo("Set your institution's EZProxy URL or VPN script in config.yaml")
+        return
+
     client = InstitutionalAccessClient(
-        proxy_url=config.institutional.get("proxy_url"),
+        proxy_url=inst.get("proxy_url"),
         vpn_enabled=False,
-        cookies_file=config.institutional.get("cookies_file", ".institutional_cookies.pkl"),
+        cookies_file=inst.get("cookies_file", ".institutional_cookies.pkl"),
     )
 
     try:
