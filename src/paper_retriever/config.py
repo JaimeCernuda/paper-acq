@@ -111,10 +111,23 @@ class Config:
             if key not in batch:
                 batch[key] = value
 
+        # Default institutional configuration
+        default_institutional = {
+            "enabled": False,
+            "vpn_enabled": False,
+            "proxy_url": None,  # e.g., "https://ezproxy.gl.iit.edu/login?url="
+            "cookies_file": ".institutional_cookies.pkl",
+            "university": None,
+        }
+        institutional = data.get("institutional", {})
+        for key, value in default_institutional.items():
+            if key not in institutional:
+                institutional[key] = value
+
         return cls(
             email=email,
             api_keys=api_keys,
-            institutional=data.get("institutional", {}),
+            institutional=institutional,
             sources=sources,
             unofficial=data.get("unofficial", {}),
             download=download,

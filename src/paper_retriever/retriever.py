@@ -17,6 +17,8 @@ from paper_retriever.clients.arxiv_client import ArxivClient
 from paper_retriever.clients.pmc import PMCClient
 from paper_retriever.clients.biorxiv import BioRxivClient
 from paper_retriever.clients.semantic_scholar import SemanticScholarClient
+from paper_retriever.clients.institutional import InstitutionalAccessClient
+from paper_retriever.clients.web_search import WebSearchClient
 
 
 class RetrievalStatus(Enum):
@@ -69,6 +71,21 @@ class PaperRetriever:
                 api_key=self.config.api_keys.get("semantic_scholar"),
             ),
         }
+
+        # Initialize institutional client if configured
+        inst_config = self.config.institutional
+        if inst_config.get("enabled"):
+            clients["institutional"] = InstitutionalAccessClient(
+                proxy_url=inst_config.get("proxy_url"),
+                vpn_enabled=inst_config.get("vpn_enabled", False),
+                cookies_file=inst_config.get("cookies_file", ".institutional_cookies.pkl"),
+                download_dir=self.config.download.get("output_dir", "./downloads"),
+            )
+
+        # Initialize web search client
+        if self.config.is_source_enabled("web_search"):
+            clients["web_search"] = WebSearchClient(enabled=True)
+
         return clients
 
     async def retrieve(
@@ -341,6 +358,44 @@ class PaperRetriever:
                             title=title,
                             status=RetrievalStatus.SUCCESS,
                             source="semantic_scholar",
+                            pdf_path=str(output_path),
+                        )
+
+            elif source == "institutional" and doi:
+                # Institutional access via EZProxy
+                if not client.is_authenticated():
+                    # Skip if not authenticated (user needs to run auth first)
+                    pass
+                else:
+                    if await client.download_pdf(doi, output_path):
+                        return RetrievalResult(
+                            doi=doi,
+                            title=title,
+                            status=RetrievalStatus.SUCCESS,
+                            source="institutional",
+                            pdf_path=str(output_path),
+                        )
+
+            elif source == "web_search":
+                # Web search fallback using Claude Agent SDK
+                authors = metadata.get("authors", [])
+                author_names = [
+                    a.get("family", "") or a.get("name", "")
+                    for a in authors
+                    if isinstance(a, dict)
+                ]
+                result = await client.search_for_pdf(
+                    title=title,
+                    doi=doi,
+                    authors=author_names,
+                )
+                if result and result.get("pdf_url"):
+                    if await self._download_pdf(result["pdf_url"], output_path):
+                        return RetrievalResult(
+                            doi=doi,
+                            title=title,
+                            status=RetrievalStatus.SUCCESS,
+                            source="web_search",
                             pdf_path=str(output_path),
                         )
 

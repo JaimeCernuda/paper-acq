@@ -1,37 +1,53 @@
 # Paper PDF Retriever
 
-A Python tool to retrieve academic paper PDFs from multiple open access sources.
+**Download academic papers automatically from multiple sources.**
 
-## Features
+Got a list of papers you need? This tool will find and download PDFs from open access sources, and optionally through your university's subscription access.
 
-- **Multiple Sources**: Tries Unpaywall, arXiv, PubMed Central, bioRxiv/medRxiv, and Semantic Scholar
-- **Smart Metadata Resolution**: Resolves paper metadata via CrossRef API
-- **Batch Processing**: Process multiple papers from CSV, JSON, or text files
-- **Rate Limiting**: Respects API rate limits to avoid being blocked
-- **Configurable**: YAML configuration with environment variable overrides
-- **Caching**: Skips already-downloaded papers
+## What It Does
+
+1. You give it a DOI or title
+2. It searches multiple sources (Unpaywall, arXiv, PubMed Central, etc.)
+3. It downloads the PDF to your computer
+
+Works with single papers or a batch of hundreds.
+
+---
 
 ## Installation
 
 ```bash
+# Clone and install
+git clone <repo-url>
+cd paper-pdf-retriever
+
 # Using uv (recommended)
-uv pip install .
+uv sync
 
 # Or with pip
 pip install .
 ```
 
+---
+
 ## Quick Start
 
-1. Initialize configuration:
+### 1. Create a config file
 
 ```bash
 paper-retriever init
 ```
 
-2. Edit `config.yaml` and add your email address (required for API access).
+### 2. Add your email
 
-3. Download a paper:
+Edit `config.yaml` and set your email (required by APIs for polite access):
+
+```yaml
+user:
+  email: "your.email@university.edu"
+```
+
+### 3. Download a paper
 
 ```bash
 # By DOI
@@ -40,43 +56,121 @@ paper-retriever get --doi "10.1038/nature12373"
 # By title
 paper-retriever get --title "Attention Is All You Need"
 
-# Specify output directory
+# Specify where to save
 paper-retriever get --doi "10.1145/3292500.3330919" -o ./papers
 ```
 
+That's it! The PDF will be saved to `./downloads/` (or wherever you specify).
+
+---
+
 ## Batch Processing
 
-Create a text file with DOIs (one per line):
+Have a list of papers? Put them in a file:
 
-```text
+**Option 1: Text file (one DOI per line)**
+```
 10.1038/nature12373
 10.1145/3292500.3330919
 10.48550/arXiv.1706.03762
 ```
 
-Or a CSV file:
-
+**Option 2: CSV file**
 ```csv
 doi,title
 10.1038/nature12373,
 ,Attention Is All You Need
+10.1145/3292500.3330919,
 ```
 
 Then run:
-
 ```bash
 paper-retriever batch papers.txt
 paper-retriever batch papers.csv --format csv
 ```
 
-## Configuration
+The tool will download all papers, skipping any you've already got.
 
-Copy `config.yaml.example` to `config.yaml` and customize:
+---
+
+## Sources (What Gets Searched)
+
+The tool tries these sources in order:
+
+| Priority | Source | What It Has |
+|----------|--------|-------------|
+| 1 | **Unpaywall** | Legal open access versions from publishers & repositories |
+| 2 | **arXiv** | Preprints in physics, math, CS, quantitative biology |
+| 3 | **PubMed Central** | Open access biomedical literature |
+| 4 | **bioRxiv/medRxiv** | Biology and medical preprints |
+| 5 | **Semantic Scholar** | Academic papers with open access PDFs |
+| 6 | **Institutional** | IEEE, ACM, Elsevier via your university (optional) |
+
+You can enable/disable sources and change priorities in `config.yaml`.
+
+---
+
+## University/Institutional Access
+
+If you have a university subscription, you can download papers from IEEE, ACM, Elsevier, and other publishers.
+
+### Two Options
+
+**Option A: VPN Mode (Simplest)**
+
+If you're connected to your university's VPN:
 
 ```yaml
-user:
-  email: "your.email@university.edu"
+institutional:
+  enabled: true
+  vpn_enabled: true
+```
 
+That's it. Papers will download directly.
+
+**Option B: EZProxy Mode (No VPN needed)**
+
+If you can't use VPN, use your university's EZProxy:
+
+```yaml
+institutional:
+  enabled: true
+  vpn_enabled: false
+  proxy_url: "https://ezproxy.gl.iit.edu/login?url="  # Your university's URL
+```
+
+Then authenticate once:
+```bash
+paper-retriever auth
+```
+
+This opens a browser where you log in through your university. Your session is saved for future use.
+
+### Finding Your Proxy URL
+
+Your proxy URL usually looks like:
+- `https://ezproxy.youruni.edu/login?url=`
+- `https://proxy.library.youruni.edu/login?url=`
+
+Ask your library or check your library's website for "off-campus access" instructions.
+
+---
+
+## Configuration Reference
+
+### Full config.yaml example
+
+```yaml
+# Required: Your email for API access
+user:
+  email: "you@university.edu"
+
+# Optional: API keys for higher rate limits
+api_keys:
+  ncbi: null              # Get from https://www.ncbi.nlm.nih.gov/account/settings/
+  semantic_scholar: null  # Get from https://www.semanticscholar.org/product/api
+
+# Sources: Enable/disable and set priority (lower = tried first)
 sources:
   unpaywall:
     enabled: true
@@ -84,39 +178,85 @@ sources:
   arxiv:
     enabled: true
     priority: 2
-  # ... more sources
+  pmc:
+    enabled: true
+    priority: 3
+  biorxiv:
+    enabled: true
+    priority: 4
+  semantic_scholar:
+    enabled: true
+    priority: 5
+  institutional:
+    enabled: false  # Enable if you have university access
+    priority: 6
 
+# Institutional access settings
+institutional:
+  enabled: false
+  vpn_enabled: false
+  proxy_url: null  # e.g., "https://ezproxy.youruni.edu/login?url="
+
+# Where to save PDFs
 download:
   output_dir: "./downloads"
   skip_existing: true
+  max_title_length: 50
+
+# Rate limiting (don't change unless you know what you're doing)
+rate_limits:
+  global_delay: 1.0
+  per_source_delays:
+    crossref: 0.5
+    unpaywall: 0.1
+    arxiv: 3.0
+    pmc: 0.34
+    semantic_scholar: 3.0
+    biorxiv: 1.0
+
+# Batch processing
+batch:
+  max_concurrent: 3
 ```
 
 ### Environment Variables
 
-- `PAPER_RETRIEVER_EMAIL`: Your email address
-- `NCBI_API_KEY`: NCBI API key for higher PMC rate limits
-- `SEMANTIC_SCHOLAR_API_KEY`: Semantic Scholar API key
+You can also set these via environment variables:
 
-## API Rate Limits
+| Variable | Purpose |
+|----------|---------|
+| `PAPER_RETRIEVER_EMAIL` | Your email (overrides config) |
+| `NCBI_API_KEY` | PubMed/PMC API key |
+| `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar API key |
 
-| Source | Rate Limit | Notes |
-|--------|------------|-------|
-| CrossRef | 50 req/sec (shared) | Use `mailto` parameter |
-| Unpaywall | 100k/day | Very permissive |
-| arXiv | 1 req/3 sec | Use `export.arxiv.org` |
-| PMC | 3 req/sec (10 with key) | NCBI account for key |
-| Semantic Scholar | 100 req/5 min | Free key available |
-| bioRxiv | ~1 req/sec | No official limit |
+---
 
-## Sources
+## CLI Commands
 
-The tool tries sources in priority order:
+```bash
+# Show help
+paper-retriever --help
 
-1. **Unpaywall**: Finds legal open access versions
-2. **arXiv**: Preprints in physics, math, CS, etc.
-3. **PubMed Central**: Open access biomedical literature
-4. **bioRxiv/medRxiv**: Biology and medical preprints
-5. **Semantic Scholar**: Academic search with OA PDFs
+# Download a single paper
+paper-retriever get --doi "10.1234/example"
+paper-retriever get --title "Paper Title"
+paper-retriever get -d "10.1234/example" -o ./papers -e you@email.com
+
+# Download multiple papers
+paper-retriever batch papers.txt
+paper-retriever batch papers.csv --format csv -n 5  # 5 concurrent downloads
+
+# Create config file
+paper-retriever init
+
+# Show available sources
+paper-retriever sources
+
+# Authenticate with your university (for institutional access)
+paper-retriever auth
+```
+
+---
 
 ## Python API
 
@@ -124,22 +264,95 @@ The tool tries sources in priority order:
 import asyncio
 from paper_retriever import PaperRetriever, Config
 
+# Load config
 config = Config.load("config.yaml")
 retriever = PaperRetriever(config)
 
-# Single paper
-result = asyncio.run(retriever.retrieve(doi="10.1038/nature12373"))
-print(result.status, result.pdf_path)
+# Download a single paper
+async def main():
+    result = await retriever.retrieve(doi="10.1038/nature12373")
+    print(f"Status: {result.status}")
+    print(f"Path: {result.pdf_path}")
 
-# Batch
+asyncio.run(main())
+```
+
+### Batch processing
+
+```python
 from paper_retriever.retriever import batch_retrieve
 
 papers = [
     {"doi": "10.1038/nature12373"},
     {"title": "Attention Is All You Need"},
+    {"doi": "10.1145/3292500.3330919"},
 ]
-results = asyncio.run(batch_retrieve(retriever, papers))
+
+results = asyncio.run(batch_retrieve(retriever, papers, max_concurrent=3))
+
+for r in results:
+    print(f"{r.doi or r.title}: {r.status}")
 ```
+
+---
+
+## Troubleshooting
+
+### "Email required" error
+
+Add your email to `config.yaml` under `user.email` or use the `-e` flag:
+```bash
+paper-retriever get -d "10.1234/example" -e you@email.com
+```
+
+### Paper not found
+
+The tool only searches open access sources by default. If the paper is behind a paywall:
+1. Enable institutional access (see above)
+2. Or try the paper's arXiv preprint (many papers have one)
+
+### Rate limiting
+
+If you're getting blocked, the tool is making requests too fast. The default settings are conservative, but you can increase delays in `config.yaml`:
+
+```yaml
+rate_limits:
+  global_delay: 2.0  # Increase this
+```
+
+### Institutional auth not working
+
+1. Make sure your `proxy_url` is correct
+2. Clear old cookies: delete `.institutional_cookies.pkl`
+3. Run `paper-retriever auth` again
+4. Complete the login fully before pressing Enter
+
+---
+
+## Rate Limits
+
+The tool respects API rate limits to avoid getting blocked:
+
+| Source | Rate Limit | Notes |
+|--------|------------|-------|
+| CrossRef | 50 req/sec (shared pool) | Uses polite pool with email |
+| Unpaywall | 100,000/day | Very permissive |
+| arXiv | 1 request/3 sec | Official limit |
+| PubMed Central | 3 req/sec (10 with key) | Get API key for more |
+| Semantic Scholar | 100 req/5 min | Free API key available |
+| bioRxiv | ~1 req/sec | No official limit |
+
+---
+
+## Contributing
+
+Pull requests welcome! Please run tests before submitting:
+
+```bash
+uv run pytest tests/
+```
+
+---
 
 ## License
 

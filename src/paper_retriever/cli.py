@@ -227,6 +227,22 @@ sources:
   semantic_scholar:
     enabled: true
     priority: 5
+  institutional:
+    enabled: false  # Enable if you have university access
+    priority: 6
+  web_search:
+    enabled: false  # Requires Claude Agent SDK
+    priority: 9
+
+# Institutional Access (for IEEE, ACM, etc. via your university)
+# Two modes available:
+#   1. VPN mode: Connect to university VPN, set vpn_enabled: true
+#   2. EZProxy mode: Set proxy_url, then run 'paper-retriever auth'
+institutional:
+  enabled: false
+  vpn_enabled: false  # Set true if using VPN instead of EZProxy
+  proxy_url: null  # e.g., "https://ezproxy.gl.iit.edu/login?url="
+  cookies_file: ".institutional_cookies.pkl"
 
 # Download settings
 download:
@@ -276,6 +292,84 @@ def sources(ctx: click.Context) -> None:
         enabled = settings.get("enabled", False)
         status = click.style("enabled", fg="green") if enabled else click.style("disabled", fg="red")
         click.echo(f"  {priority}. {name}: {status}")
+
+    # Show institutional access status
+    click.echo()
+    inst = config.institutional
+    if inst.get("enabled"):
+        click.echo("Institutional access:")
+        if inst.get("vpn_enabled"):
+            click.echo(click.style("  VPN mode: enabled", fg="green"))
+        elif inst.get("proxy_url"):
+            click.echo(f"  Proxy URL: {inst.get('proxy_url')}")
+            cookies_file = Path(inst.get("cookies_file", ".institutional_cookies.pkl"))
+            if cookies_file.exists():
+                click.echo(click.style("  Authentication: saved", fg="green"))
+            else:
+                click.echo(click.style("  Authentication: not configured", fg="yellow"))
+                click.echo("  Run 'paper-retriever auth' to authenticate")
+
+
+@cli.command()
+@click.pass_context
+def auth(ctx: click.Context) -> None:
+    """Authenticate with your institution for access to IEEE, ACM, etc.
+
+    This opens a browser window where you can log in through your
+    institution's authentication system (Shibboleth/SAML). Your session
+    will be saved for future use.
+
+    Before running this command, configure institutional access in config.yaml:
+
+        institutional:
+          enabled: true
+          proxy_url: "https://ezproxy.your-university.edu/login?url="
+
+    Example:
+
+        paper-retriever auth
+    """
+    config = Config.load(ctx.obj["config_path"])
+
+    if not config.institutional.get("enabled"):
+        click.echo(click.style("Error: ", fg="red") + "Institutional access not enabled in config")
+        click.echo()
+        click.echo("Add the following to your config.yaml:")
+        click.echo()
+        click.echo("  institutional:")
+        click.echo("    enabled: true")
+        click.echo('    proxy_url: "https://ezproxy.your-university.edu/login?url="')
+        return
+
+    if config.institutional.get("vpn_enabled"):
+        click.echo(click.style("Note: ", fg="yellow") + "VPN mode is enabled")
+        click.echo("When connected to your institution's VPN, no additional auth is needed.")
+        return
+
+    if not config.institutional.get("proxy_url"):
+        click.echo(click.style("Error: ", fg="red") + "No proxy_url configured")
+        click.echo("Set your institution's EZProxy URL in config.yaml")
+        return
+
+    from paper_retriever.clients.institutional import InstitutionalAccessClient
+
+    client = InstitutionalAccessClient(
+        proxy_url=config.institutional.get("proxy_url"),
+        vpn_enabled=False,
+        cookies_file=config.institutional.get("cookies_file", ".institutional_cookies.pkl"),
+    )
+
+    try:
+        success = client.authenticate_interactive()
+        if success:
+            click.echo()
+            click.echo(click.style("Success! ", fg="green") + "You can now download papers via institutional access.")
+        else:
+            click.echo(click.style("Authentication failed.", fg="red"))
+    except ImportError as e:
+        click.echo(click.style("Error: ", fg="red") + str(e))
+        click.echo()
+        click.echo("Install Selenium with: pip install selenium webdriver-manager")
 
 
 def _load_papers_from_file(filepath: str, file_format: str) -> list[dict[str, str | None]]:

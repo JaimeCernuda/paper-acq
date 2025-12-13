@@ -86,13 +86,15 @@ class CrossRefClient:
         titles = work.get("title", [])
         title = titles[0] if titles else "untitled"
 
-        # Extract year
-        date_parts = (
-            work.get("published-print", {}).get("date-parts", [[None]])
-            or work.get("published-online", {}).get("date-parts", [[None]])
-            or work.get("created", {}).get("date-parts", [[None]])
-        )
-        year = date_parts[0][0] if date_parts and date_parts[0] else None
+        # Extract year - try multiple date fields
+        year = None
+        for date_field in ["published-print", "published-online", "created"]:
+            date_info = work.get(date_field, {})
+            if date_info:
+                date_parts = date_info.get("date-parts", [[]])
+                if date_parts and date_parts[0] and date_parts[0][0]:
+                    year = date_parts[0][0]
+                    break
 
         # Extract container/journal
         container = work.get("container-title", [])
