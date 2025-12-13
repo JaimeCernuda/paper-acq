@@ -1,0 +1,96 @@
+# Paper PDF Retriever Configuration
+# Copy this file to config.yaml and edit with your settings
+
+# Your identification (required for polite API access)
+user:
+  email: "your.email@university.edu"
+  name: "Your Name"
+
+# API Keys (optional but recommended for higher rate limits)
+api_keys:
+  # NCBI API key for PubMed Central - get from https://www.ncbi.nlm.nih.gov/account/settings/
+  ncbi: null
+  # Semantic Scholar API key - get from https://www.semanticscholar.org/product/api
+  semantic_scholar: null
+  # CrossRef Plus API key (if you have institutional access)
+  crossref_plus: null
+
+# Institutional Access (if you have university credentials)
+institutional:
+  enabled: false
+  university: "Your University"
+  proxy_url: "https://proxy.library.your-university.edu/login?url="
+  vpn_enabled: false
+
+# Source configuration (lower priority number = tried first)
+sources:
+  unpaywall:
+    enabled: true
+    priority: 1
+  arxiv:
+    enabled: true
+    priority: 2
+  pmc:
+    enabled: true
+    priority: 3
+  biorxiv:
+    enabled: true
+    priority: 4
+  semantic_scholar:
+    enabled: true
+    priority: 5
+  institutional:
+    enabled: false
+    priority: 6
+  scihub:
+    enabled: false
+    priority: 7
+  libgen:
+    enabled: false
+    priority: 8
+  web_search:
+    enabled: false
+    priority: 9
+
+# Unofficial sources (require explicit opt-in)
+# WARNING: Use at your own risk. Some of these may be illegal in your jurisdiction.
+unofficial:
+  disclaimer_accepted: false  # Set to true to enable unofficial sources
+  scihub:
+    enabled: false
+    proxy: null  # SOCKS5 proxy if needed
+  libgen:
+    enabled: false
+    mirror: "li"
+
+# Download settings
+download:
+  output_dir: "./downloads"
+  filename_format: "{first_author}_{year}_{title_short}.pdf"
+  max_title_length: 50
+  create_subfolders: false
+  skip_existing: true
+
+# Rate limiting (seconds between requests)
+rate_limits:
+  global_delay: 1.0
+  per_source_delays:
+    crossref: 0.5
+    unpaywall: 0.1
+    arxiv: 3.0
+    pmc: 0.34
+    semantic_scholar: 3.0
+    biorxiv: 1.0
+
+# Batch processing settings
+batch:
+  max_concurrent: 3
+  retry_failed: true
+  max_retries: 2
+  save_progress: true
+  progress_file: ".retrieval_progress.json"
+
+# Logging
+logging:
+  level: "INFO"
+  file: null  # Set to a path to log to file
