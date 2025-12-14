@@ -273,6 +273,10 @@ paper-retriever sources
 
 # Authenticate with your university (for institutional access)
 paper-retriever auth
+
+# Sync config across machines (requires GitHub CLI)
+paper-retriever config push     # Upload config to private gist
+paper-retriever config pull     # Download config from gist
 ```
 
 ---
@@ -345,6 +349,49 @@ rate_limits:
 2. Clear old cookies: delete `.institutional_cookies.pkl`
 3. Run `paper-retriever auth` again
 4. Complete the login fully before pressing Enter
+
+---
+
+## Limitations & Known Issues
+
+### Sources That Don't Work
+
+| Source | Status | Why |
+|--------|--------|-----|
+| **ScienceDirect/Elsevier** | Not supported | Elsevier removed PDF support from their API in August 2017. Only XML is returned. Direct scraping is blocked by aggressive bot detection (Incapsula/Imperva). |
+| **Springer** | Not supported | No public API for PDF access. Requires institutional subscription + authentication. |
+| **Wiley** | Not supported | Same as Springer. TDM API exists but requires institutional agreement. |
+| **Taylor & Francis** | Not supported | No public PDF API. |
+
+### Sources With Caveats
+
+| Source | Issue | Workaround |
+|--------|-------|------------|
+| **Semantic Scholar** | Aggressive rate limiting (429 errors) | Use 3+ second delays. Get an [API key](https://www.semanticscholar.org/product/api) for higher limits. Not all papers have OA PDFs. |
+| **bioRxiv/medRxiv** | Occasional 403 blocks | Tool adds required headers automatically. If blocked, wait and retry. |
+| **Institutional** | Requires active session | Re-run `paper-retriever auth` if cookies expire. VPN mode may be more reliable than EZProxy. |
+
+### What This Means
+
+For paywalled papers not in open access repositories, you'll need:
+1. **Institutional access** via VPN or EZProxy (if your university provides it)
+2. **Check arXiv** - many papers have preprint versions
+3. **Email the authors** - most are happy to share PDFs directly
+4. **Interlibrary loan** - your library can usually get any paper
+
+### Gray Area Sources
+
+Sci-Hub and LibGen clients exist in the code but are disabled by default. These sources operate in legal gray areas depending on jurisdiction. Enable at your own discretion:
+
+```yaml
+sources:
+  scihub:
+    enabled: true  # Use at your own risk
+    priority: 99
+  libgen:
+    enabled: true  # Use at your own risk
+    priority: 99
+```
 
 ---
 
