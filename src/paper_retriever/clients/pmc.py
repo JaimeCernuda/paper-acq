@@ -37,7 +37,7 @@ class PMCClient:
         if self.api_key:
             params["api_key"] = self.api_key
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             try:
                 response = await client.get(self.IDCONV_URL, params=params)
                 response.raise_for_status()
@@ -60,7 +60,7 @@ class PMCClient:
         """
         params: dict[str, Any] = {"id": pmcid, "format": "pdf"}
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             try:
                 response = await client.get(self.OA_URL, params=params)
                 response.raise_for_status()
@@ -110,7 +110,7 @@ class PMCClient:
         if self.email:
             params["email"] = self.email
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             try:
                 response = await client.get(search_url, params=params)
                 response.raise_for_status()

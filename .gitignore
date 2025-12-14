@@ -24,9 +24,14 @@ build/
 .coverage
 htmlcov/
 
-# Local config
+# Local config (contains user email and settings)
 config.yaml
 .retrieval_progress.json
+
+# Authentication cookies and browser profile (sensitive!)
+.institutional_cookies.pkl
+*.pkl
+.browser_profile/
 
 # Downloads
 downloads/

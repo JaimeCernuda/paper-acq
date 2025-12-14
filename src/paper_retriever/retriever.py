@@ -11,6 +11,7 @@ import httpx
 
 from paper_retriever.config import Config
 from paper_retriever.rate_limiter import RateLimiter
+from paper_retriever.logger import RetrievalLogger
 from paper_retriever.clients.crossref import CrossRefClient
 from paper_retriever.clients.unpaywall import UnpaywallClient
 from paper_retriever.clients.arxiv_client import ArxivClient
@@ -19,6 +20,8 @@ from paper_retriever.clients.biorxiv import BioRxivClient
 from paper_retriever.clients.semantic_scholar import SemanticScholarClient
 from paper_retriever.clients.institutional import InstitutionalAccessClient
 from paper_retriever.clients.web_search import WebSearchClient
+from paper_retriever.clients.scihub import ScihubClient
+from paper_retriever.clients.libgen import LibGenClient
 
 
 class RetrievalStatus(Enum):
@@ -87,6 +90,20 @@ class PaperRetriever:
         if self.config.is_source_enabled("web_search"):
             clients["web_search"] = WebSearchClient(enabled=True)
 
+        # Initialize unofficial clients if disclaimer accepted
+        if self.config.is_unofficial_enabled():
+            if self.config.is_source_enabled("scihub"):
+                clients["scihub"] = ScihubClient(
+                    timeout=60.0,
+                    max_retries=2,
+                )
+
+            if self.config.is_source_enabled("libgen"):
+                clients["libgen"] = LibGenClient(
+                    timeout=60.0,
+                    max_retries=2,
+                )
+
         return clients
 
     async def retrieve(
@@ -109,10 +126,18 @@ class PaperRetriever:
                 error="Must provide DOI or title",
             )
 
+        # Create logger for this retrieval
+        output_dir = Path(self.config.download.get("output_dir", "./downloads"))
+        logger = RetrievalLogger(output_dir, doi, title)
+
         # Resolve metadata if needed
         metadata = await self._resolve_metadata(doi, title)
         resolved_doi = metadata.get("doi") if metadata else doi
         resolved_title = metadata.get("title") if metadata else title
+        year = metadata.get("year") if metadata else None
+
+        # Show header
+        logger.header(resolved_doi, resolved_title, str(year) if year else None)
 
         # Check if already downloaded
         output_path = self._get_output_path(metadata or {"doi": doi, "title": title})
@@ -128,8 +153,9 @@ class PaperRetriever:
 
         # Try sources in priority order
         sources = self.config.get_sorted_sources()
+        total_sources = len(sources)
 
-        for source_name in sources:
+        for i, source_name in enumerate(sources, 1):
             if not self.config.is_source_enabled(source_name):
                 continue
 
@@ -137,19 +163,28 @@ class PaperRetriever:
             if source_name in ("scihub", "libgen") and not self.config.is_unofficial_enabled():
                 continue
 
+            logger.source_start(i, total_sources, source_name)
+
             await self.rate_limiter.wait(source_name)
 
-            result = await self._try_source(
+            result, reason = await self._try_source(
                 source_name,
                 resolved_doi,
                 resolved_title or title or "",
                 metadata or {},
                 output_path,
+                logger,
             )
+
             if result and result.status == RetrievalStatus.SUCCESS:
+                logger.source_result(i, total_sources, source_name, True, reason, result.pdf_path)
+                logger.final_result(True, source_name, result.pdf_path)
                 result.metadata = metadata
                 return result
+            else:
+                logger.source_result(i, total_sources, source_name, False, reason)
 
+        logger.final_result(False)
         return RetrievalResult(
             doi=resolved_doi,
             title=resolved_title or title or "",
@@ -248,7 +283,8 @@ class PaperRetriever:
         title: str,
         metadata: dict[str, Any],
         output_path: Path,
-    ) -> RetrievalResult | None:
+        logger: RetrievalLogger,
+    ) -> tuple[RetrievalResult | None, str]:
         """Try to retrieve PDF from a specific source.
 
         Args:
@@ -257,33 +293,44 @@ class PaperRetriever:
             title: Paper title.
             metadata: Paper metadata.
             output_path: Path to save PDF.
+            logger: Logger for this retrieval.
 
         Returns:
-            RetrievalResult or None if source doesn't have the paper.
+            Tuple of (RetrievalResult or None, reason string).
         """
         client = self.clients.get(source)
         if not client:
-            return None
+            return None, "client not configured"
 
         try:
-            if source == "unpaywall" and doi:
+            if source == "unpaywall":
+                if not doi:
+                    return None, "no DOI provided"
+                logger.detail(f"Checking OA status for {doi}")
                 result = await client.get_oa_location(doi)
-                if result and result.get("pdf_url"):
-                    if await self._download_pdf(result["pdf_url"], output_path):
-                        return RetrievalResult(
-                            doi=doi,
-                            title=title,
-                            status=RetrievalStatus.SUCCESS,
-                            source="unpaywall",
-                            pdf_path=str(output_path),
-                        )
+                if not result:
+                    return None, "no OA version found"
+                if not result.get("pdf_url"):
+                    return None, "OA exists but no PDF URL"
+                logger.detail(f"Found PDF: {result['pdf_url']}")
+                if await self._download_pdf(result["pdf_url"], output_path):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="unpaywall",
+                        pdf_path=str(output_path),
+                    ), "downloaded"
+                return None, "PDF download failed"
 
             elif source == "arxiv":
                 # Check if arXiv paper by DOI
                 if doi and "arxiv" in doi.lower():
+                    logger.detail(f"arXiv DOI detected: {doi}")
                     result = await client.search_by_doi(doi)
                     if result:
                         pdf_url = client.get_pdf_url(result)
+                        logger.detail(f"Found PDF: {pdf_url}")
                         if await self._download_pdf(pdf_url, output_path):
                             return RetrievalResult(
                                 doi=doi,
@@ -291,15 +338,16 @@ class PaperRetriever:
                                 status=RetrievalStatus.SUCCESS,
                                 source="arxiv",
                                 pdf_path=str(output_path),
-                            )
+                            ), "downloaded"
 
                 # Search by title as fallback
+                logger.detail(f"Searching by title: {title[:50]}...")
                 results = await client.search_by_title(title)
                 if results:
-                    # Verify title match
                     for result in results:
                         if self._titles_match(title, result.title):
                             pdf_url = client.get_pdf_url(result)
+                            logger.detail(f"Title match found, PDF: {pdf_url}")
                             if await self._download_pdf(pdf_url, output_path):
                                 return RetrievalResult(
                                     doi=doi,
@@ -307,40 +355,61 @@ class PaperRetriever:
                                     status=RetrievalStatus.SUCCESS,
                                     source="arxiv",
                                     pdf_path=str(output_path),
-                                )
+                                ), "downloaded"
+                return None, "not an arXiv paper"
 
-            elif source == "pmc" and doi:
+            elif source == "pmc":
+                if not doi:
+                    return None, "no DOI provided"
+                logger.detail(f"Looking up PMC ID for {doi}")
                 pmcid = await client.doi_to_pmcid(doi)
-                if pmcid:
-                    pdf_url = await client.get_pdf_url(pmcid)
-                    if pdf_url and await self._download_pdf(pdf_url, output_path):
-                        return RetrievalResult(
-                            doi=doi,
-                            title=title,
-                            status=RetrievalStatus.SUCCESS,
-                            source="pmc",
-                            pdf_path=str(output_path),
-                        )
+                if not pmcid:
+                    return None, "no PMC ID for this DOI"
+                logger.detail(f"Found PMC ID: {pmcid}")
+                pdf_url = await client.get_pdf_url(pmcid)
+                if not pdf_url:
+                    return None, "PMC entry has no PDF"
+                logger.detail(f"PDF URL: {pdf_url}")
+                if await self._download_pdf(pdf_url, output_path):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="pmc",
+                        pdf_path=str(output_path),
+                    ), "downloaded"
+                return None, "PDF download failed"
 
-            elif source == "biorxiv" and doi:
+            elif source == "biorxiv":
+                if not doi:
+                    return None, "no DOI provided"
+                if not doi.startswith("10.1101"):
+                    return None, "not a bioRxiv DOI"
+                logger.detail(f"Checking bioRxiv for {doi}")
                 result = await client.get_preprint(doi)
-                if result and result.get("pdf_url"):
-                    if await self._download_pdf(result["pdf_url"], output_path):
-                        return RetrievalResult(
-                            doi=doi,
-                            title=title,
-                            status=RetrievalStatus.SUCCESS,
-                            source=result.get("server", "biorxiv"),
-                            pdf_path=str(output_path),
-                        )
+                if not result:
+                    return None, "preprint not found"
+                if not result.get("pdf_url"):
+                    return None, "no PDF available"
+                logger.detail(f"PDF URL: {result['pdf_url']}")
+                if await self._download_pdf(result["pdf_url"], output_path):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source=result.get("server", "biorxiv"),
+                        pdf_path=str(output_path),
+                    ), "downloaded"
+                return None, "PDF download failed"
 
             elif source == "semantic_scholar":
                 result = None
                 if doi:
+                    logger.detail(f"Looking up paper by DOI: {doi}")
                     result = await client.get_paper(doi)
 
                 if not result or not result.get("pdf_url"):
-                    # Search by title
+                    logger.detail(f"Searching by title: {title[:50]}...")
                     results = await client.search_title(title)
                     for r in results:
                         if r.get("openAccessPdf") and self._titles_match(
@@ -352,59 +421,117 @@ class PaperRetriever:
                             }
                             break
 
-                if result and result.get("pdf_url"):
-                    if await self._download_pdf(result["pdf_url"], output_path):
-                        return RetrievalResult(
-                            doi=doi,
-                            title=title,
-                            status=RetrievalStatus.SUCCESS,
-                            source="semantic_scholar",
-                            pdf_path=str(output_path),
-                        )
+                if not result or not result.get("pdf_url"):
+                    return None, "no open access PDF"
+                logger.detail(f"PDF URL: {result['pdf_url']}")
+                if await self._download_pdf(result["pdf_url"], output_path):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="semantic_scholar",
+                        pdf_path=str(output_path),
+                    ), "downloaded"
+                return None, "PDF download failed"
 
-            elif source == "institutional" and doi:
-                # Institutional access via EZProxy
+            elif source == "institutional":
+                if not doi:
+                    return None, "no DOI provided"
                 if not client.is_authenticated():
-                    # Skip if not authenticated (user needs to run auth first)
-                    pass
-                else:
-                    if await client.download_pdf(doi, output_path):
-                        return RetrievalResult(
-                            doi=doi,
-                            title=title,
-                            status=RetrievalStatus.SUCCESS,
-                            source="institutional",
-                            pdf_path=str(output_path),
-                        )
+                    return None, "not authenticated (run: paper-retriever auth)"
+                logger.detail(f"Accessing via EZProxy: {doi}")
+                proxied_url = client.doi_to_proxied_url(doi)
+                logger.detail(f"URL: {proxied_url}")
+                if await client.download_pdf(doi, output_path):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="institutional",
+                        pdf_path=str(output_path),
+                    ), "downloaded"
+                # Capture detailed error for logging
+                last_error = client.get_last_error()
+                response_url = client.get_last_response_url()
+                pdf_url = client.get_last_pdf_url()
+                if response_url:
+                    logger.detail(f"Final URL: {response_url}")
+                if pdf_url:
+                    logger.detail(f"PDF URL attempted: {pdf_url}")
+                if last_error:
+                    logger.detail(f"ERROR: {last_error}")
+                    return None, f"failed: {last_error}"
+                return None, "institutional download failed"
 
             elif source == "web_search":
-                # Web search fallback using Claude Agent SDK
                 authors = metadata.get("authors", [])
                 author_names = [
                     a.get("family", "") or a.get("name", "")
                     for a in authors
                     if isinstance(a, dict)
                 ]
+                logger.detail(f"Web searching for: {title[:50]}...")
                 result = await client.search_for_pdf(
                     title=title,
                     doi=doi,
                     authors=author_names,
                 )
-                if result and result.get("pdf_url"):
-                    if await self._download_pdf(result["pdf_url"], output_path):
-                        return RetrievalResult(
-                            doi=doi,
-                            title=title,
-                            status=RetrievalStatus.SUCCESS,
-                            source="web_search",
-                            pdf_path=str(output_path),
-                        )
+                if not result or not result.get("pdf_url"):
+                    return None, "no PDF found via web search"
+                logger.detail(f"Found: {result['pdf_url']}")
+                if await self._download_pdf(result["pdf_url"], output_path):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="web_search",
+                        pdf_path=str(output_path),
+                    ), "downloaded"
+                return None, "PDF download failed"
+
+            elif source == "scihub":
+                logger.detail("Trying Sci-Hub mirrors...")
+                result = None
+                if doi:
+                    result = await client.download_by_doi(doi, output_path)
+
+                if not result and title:
+                    result = await client.download_by_title(title, output_path)
+
+                if result and result.get("pdf_path"):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="scihub",
+                        pdf_path=result["pdf_path"],
+                    ), "downloaded"
+                return None, "not available or bot protection"
+
+            elif source == "libgen":
+                logger.detail("Trying LibGen mirrors...")
+                result = None
+                if doi:
+                    result = await client.download_by_doi(doi, output_path)
+
+                if not result and title:
+                    result = await client.download_by_title(title, output_path)
+
+                if result and result.get("pdf_path"):
+                    return RetrievalResult(
+                        doi=doi,
+                        title=title,
+                        status=RetrievalStatus.SUCCESS,
+                        source="libgen",
+                        pdf_path=result["pdf_path"],
+                    ), "downloaded"
+                return None, "not available or connection failed"
 
         except Exception as e:
-            # Log but don't fail - try next source
-            print(f"Error with {source}: {e}")
+            logger.error(source, str(e))
+            return None, f"error: {e}"
 
-        return None
+        return None, "unknown source"
 
     def _titles_match(self, title1: str, title2: str) -> bool:
         """Check if two titles are similar enough to be the same paper.
@@ -444,8 +571,16 @@ class PaperRetriever:
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0",
+                "Accept": "application/pdf,*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            # Add Referer for bioRxiv/medRxiv to avoid 403 Forbidden
+            if "biorxiv.org" in url or "medrxiv.org" in url:
+                headers["Referer"] = url.replace(".full.pdf", "")
             async with httpx.AsyncClient(
-                follow_redirects=True, timeout=60
+                follow_redirects=True, timeout=60, headers=headers
             ) as client:
                 response = await client.get(url)
                 response.raise_for_status()

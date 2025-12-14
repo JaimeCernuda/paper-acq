@@ -1,0 +1,39 @@
+# Test config: PubMed Central only
+user:
+  email: "jcernudagarcia@hawk.illinoistech.edu"
+
+sources:
+  unpaywall:
+    enabled: false
+    priority: 1
+  arxiv:
+    enabled: false
+    priority: 2
+  pmc:
+    enabled: true
+    priority: 3
+  biorxiv:
+    enabled: false
+    priority: 4
+  semantic_scholar:
+    enabled: false
+    priority: 5
+  institutional:
+    enabled: false
+    priority: 6
+  scihub:
+    enabled: false
+    priority: 7
+  libgen:
+    enabled: false
+    priority: 8
+  web_search:
+    enabled: false
+    priority: 9
+
+download:
+  output_dir: "./downloads/test_pmc"
+  skip_existing: false
+
+rate_limits:
+  global_delay: 0.5

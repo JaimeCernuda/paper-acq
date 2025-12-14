@@ -22,16 +22,25 @@ class SemanticScholarClient:
             self.headers["x-api-key"] = api_key
         self.delay = 0.01 if api_key else 3.0  # ~100/5min = 1 per 3 sec
 
-    async def get_paper(self, doi: str) -> dict[str, Any] | None:
+    async def get_paper(self, identifier: str) -> dict[str, Any] | None:
         """Get paper with open access PDF URL.
 
         Args:
-            doi: The DOI to look up.
+            identifier: Paper identifier - DOI, CorpusID, ArXiv ID, etc.
+                       If it looks like a DOI (contains '/'), adds DOI: prefix.
+                       Otherwise uses the identifier as-is.
 
         Returns:
             Dict with paper info and PDF URL, or None if not found.
         """
-        url = f"{self.BASE_URL}/paper/DOI:{doi}"
+        # Determine ID format - DOIs contain '/', CorpusIDs are numeric
+        if "/" in identifier:
+            paper_id = f"DOI:{identifier}"
+        elif identifier.isdigit():
+            paper_id = f"CorpusID:{identifier}"
+        else:
+            paper_id = identifier  # Already prefixed (e.g., "CorpusID:123")
+        url = f"{self.BASE_URL}/paper/{paper_id}"
         params = {"fields": "title,authors,openAccessPdf,externalIds,year,venue"}
 
         async with httpx.AsyncClient(timeout=30) as client:

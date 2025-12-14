@@ -79,20 +79,20 @@ def get(
     result = asyncio.run(retriever.retrieve(doi=doi, title=title))
 
     if result.status == RetrievalStatus.SUCCESS:
-        click.echo(click.style("✓ Downloaded: ", fg="green") + str(result.pdf_path))
+        click.echo(click.style("[OK] Downloaded: ", fg="green") + str(result.pdf_path))
         click.echo(f"  Source: {result.source}")
         if result.metadata:
             if result.metadata.get("title"):
-                click.echo(f"  Title: {result.metadata['title']}")
+                click.echo(f"  Title: {_safe_str(result.metadata['title'])}")
             if result.metadata.get("first_author"):
                 click.echo(f"  Author: {result.metadata['first_author']}")
     elif result.status == RetrievalStatus.SKIPPED:
-        click.echo(click.style("→ Skipped: ", fg="yellow") + "Already downloaded")
+        click.echo(click.style("[SKIP] ", fg="yellow") + "Already downloaded")
         click.echo(f"  Path: {result.pdf_path}")
     else:
-        click.echo(click.style("✗ Failed: ", fg="red") + str(result.error))
+        click.echo(click.style("[FAIL] ", fg="red") + str(result.error))
         if result.metadata and result.metadata.get("title"):
-            click.echo(f"  Title: {result.metadata['title']}")
+            click.echo(f"  Title: {_safe_str(result.metadata['title'])}")
 
 
 @cli.command()
@@ -169,11 +169,11 @@ def batch(
 
     click.echo()
     click.echo("Results:")
-    click.echo(click.style(f"  ✓ Downloaded: {success}", fg="green"))
+    click.echo(click.style(f"  [OK] Downloaded: {success}", fg="green"))
     if skipped:
-        click.echo(click.style(f"  → Skipped: {skipped}", fg="yellow"))
+        click.echo(click.style(f"  [SKIP] Skipped: {skipped}", fg="yellow"))
     if failed:
-        click.echo(click.style(f"  ✗ Failed: {failed}", fg="red"))
+        click.echo(click.style(f"  [FAIL] Failed: {failed}", fg="red"))
 
     # List failures
     failures = [r for r in results if r.status == RetrievalStatus.NOT_FOUND]
@@ -408,6 +408,15 @@ def auth(ctx: click.Context) -> None:
         click.echo(click.style("Error: ", fg="red") + str(e))
         click.echo()
         click.echo("Install Selenium with: pip install selenium webdriver-manager")
+
+
+def _safe_str(text: str) -> str:
+    """Convert text to ASCII-safe string for Windows console."""
+    try:
+        text.encode("cp1252")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("ascii", errors="replace").decode("ascii")
 
 
 def _load_papers_from_file(filepath: str, file_format: str) -> list[dict[str, str | None]]:

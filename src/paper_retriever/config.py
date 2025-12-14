@@ -91,6 +91,8 @@ class Config:
                 "pmc": 0.34,
                 "semantic_scholar": 3.0,
                 "biorxiv": 1.0,
+                "scihub": 5.0,
+                "libgen": 3.0,
             },
         }
         rate_limits = data.get("rate_limits", {})

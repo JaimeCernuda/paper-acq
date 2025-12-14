@@ -1,0 +1,45 @@
+# Test config: Institutional access only (IEEE/ACM via EZProxy)
+user:
+  email: "jcernudagarcia@hawk.illinoistech.edu"
+
+sources:
+  unpaywall:
+    enabled: false
+    priority: 1
+  arxiv:
+    enabled: false
+    priority: 2
+  pmc:
+    enabled: false
+    priority: 3
+  biorxiv:
+    enabled: false
+    priority: 4
+  semantic_scholar:
+    enabled: false
+    priority: 5
+  institutional:
+    enabled: true
+    priority: 6
+  scihub:
+    enabled: false
+    priority: 7
+  libgen:
+    enabled: false
+    priority: 8
+  web_search:
+    enabled: false
+    priority: 9
+
+institutional:
+  enabled: true
+  vpn_enabled: false
+  proxy_url: "https://ezproxy.gl.iit.edu/login?url="
+  cookies_file: ".institutional_cookies.pkl"
+
+download:
+  output_dir: "./downloads/test_institutional"
+  skip_existing: false
+
+rate_limits:
+  global_delay: 1.0

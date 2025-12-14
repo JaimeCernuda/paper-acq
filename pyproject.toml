@@ -20,6 +20,7 @@ dev = [
 ]
 unofficial = [
     "scidownl>=1.0.0",
+    "libgen-api-enhanced>=1.2.0",
 ]
 institutional = [
     "selenium>=4.0.0",
