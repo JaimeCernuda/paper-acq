@@ -410,6 +410,136 @@ def auth(ctx: click.Context) -> None:
         click.echo("Install Selenium with: pip install selenium webdriver-manager")
 
 
+@cli.group()
+def config() -> None:
+    """Manage configuration sync across machines."""
+    pass
+
+
+@config.command("push")
+@click.option("--gist-id", help="Existing gist ID to update (stored in .gist_id)")
+@click.pass_context
+def config_push(ctx: click.Context, gist_id: str | None) -> None:
+    """Push config to a private GitHub gist.
+
+    Requires GitHub CLI (gh) to be installed and authenticated.
+
+    Example:
+        paper-retriever config push
+    """
+    import subprocess
+
+    config_path = Path(ctx.obj["config_path"])
+    gist_id_file = Path(".paper_retriever_gist_id")
+
+    if not config_path.exists():
+        click.echo(click.style("Error: ", fg="red") + f"Config file not found: {config_path}")
+        return
+
+    # Check if gh is available
+    try:
+        subprocess.run(["gh", "--version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        click.echo(click.style("Error: ", fg="red") + "GitHub CLI (gh) not found")
+        click.echo("Install from: https://cli.github.com/")
+        return
+
+    # Get existing gist ID
+    if not gist_id and gist_id_file.exists():
+        gist_id = gist_id_file.read_text().strip()
+
+    if gist_id:
+        # Update existing gist
+        click.echo(f"Updating gist {gist_id}...")
+        result = subprocess.run(
+            ["gh", "gist", "edit", gist_id, "-f", str(config_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            click.echo(click.style("Error: ", fg="red") + result.stderr)
+            return
+        click.echo(click.style("Success! ", fg="green") + f"Config updated in gist {gist_id}")
+    else:
+        # Create new private gist
+        click.echo("Creating new private gist...")
+        result = subprocess.run(
+            ["gh", "gist", "create", str(config_path), "--desc", "paper-retriever config"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            click.echo(click.style("Error: ", fg="red") + result.stderr)
+            return
+
+        # Extract gist ID from URL
+        gist_url = result.stdout.strip()
+        new_gist_id = gist_url.split("/")[-1]
+        gist_id_file.write_text(new_gist_id)
+
+        click.echo(click.style("Success! ", fg="green") + f"Config uploaded to: {gist_url}")
+        click.echo(f"Gist ID saved to {gist_id_file}")
+
+
+@config.command("pull")
+@click.option("--gist-id", help="Gist ID to pull from (or uses saved .gist_id)")
+@click.pass_context
+def config_pull(ctx: click.Context, gist_id: str | None) -> None:
+    """Pull config from a private GitHub gist.
+
+    Requires GitHub CLI (gh) to be installed and authenticated.
+
+    Example:
+        paper-retriever config pull
+        paper-retriever config pull --gist-id abc123def456
+    """
+    import subprocess
+
+    config_path = Path(ctx.obj["config_path"])
+    gist_id_file = Path(".paper_retriever_gist_id")
+
+    # Check if gh is available
+    try:
+        subprocess.run(["gh", "--version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        click.echo(click.style("Error: ", fg="red") + "GitHub CLI (gh) not found")
+        click.echo("Install from: https://cli.github.com/")
+        return
+
+    # Get gist ID
+    if not gist_id:
+        if gist_id_file.exists():
+            gist_id = gist_id_file.read_text().strip()
+        else:
+            click.echo(click.style("Error: ", fg="red") + "No gist ID provided or saved")
+            click.echo("Run with --gist-id or push a config first")
+            return
+
+    click.echo(f"Pulling config from gist {gist_id}...")
+
+    # Get gist content
+    result = subprocess.run(
+        ["gh", "gist", "view", gist_id, "-r"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        click.echo(click.style("Error: ", fg="red") + result.stderr)
+        return
+
+    # Backup existing config
+    if config_path.exists():
+        backup_path = config_path.with_suffix(".yaml.bak")
+        config_path.rename(backup_path)
+        click.echo(f"Backed up existing config to {backup_path}")
+
+    # Write new config
+    config_path.write_text(result.stdout)
+    gist_id_file.write_text(gist_id)
+
+    click.echo(click.style("Success! ", fg="green") + f"Config saved to {config_path}")
+
+
 def _safe_str(text: str) -> str:
     """Convert text to ASCII-safe string for Windows console."""
     try:
